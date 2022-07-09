@@ -33,7 +33,8 @@
         addPoint(gFreehandSelectionTool, p);  
     }
 ```
-
 <img src="https://github.com/mustbeaduck/ntbm/blob/master/pics/cust_sel.gif" alt = "> a gif image should be somwhere here future me must've changed fucking name again <" />
 
+<h3> silly floodfill edge detection(starting at cord {0; 0} cuz interface not yet implemented): </h3>
+<img src="https://github.com/mustbeaduck/ntbm/blob/master/pics/sillyff.gif" alt = "> a gif image should be somwhere here future me must've changed fucking name again <" />
 

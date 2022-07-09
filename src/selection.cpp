@@ -2,6 +2,8 @@
 #include "offsets.hpp"
 #include "stdint.h"
 #include "vector"
+#include "stack"
+#include "list"
 
 //CDC handle
 HANDLE * hnd;
@@ -9,6 +11,12 @@ HANDLE * hnd;
 int oldWidth = 0;
 int oldHeight = 0;
 std::vector<std::vector<bool>> selMask;
+
+struct Pars {
+    int x;
+    int y; 
+    int dir;
+};
 
 static void selectTool()
 {
@@ -46,31 +54,106 @@ static void initSelectionMask()
     hnd = * ( HANDLE ** )(ptr + 0x18);
 }
   
+
+//iterative flood fill adjusted for (quiet retarded)edge detection
+std::list<Point> floodFillEdge(Point p) 
+{
+    //validating starting cords
+    //is overall unnecessary
+    std::list<Point> Path;
+    Path.push_back({p.x, p.y});
+   
+    Pars pars;
+    int prev_dir = 0;
+    std::stack<Pars> call_stack;
+    call_stack.push({p.x, p.y, 0});
+
+    uint32_t color = getPixel(hnd, p.x, p.y);
+
+    //recursion starts here
+    while ( !call_stack.empty() ) {
+
+        pars = call_stack.top();
+        call_stack.pop();
+        
+        //fprintf(out, "floodFill at %d %d\n", pars.x, pars.y);
+
+        //physical border check
+        if ( pars.x >= 0 and pars.x < oldWidth and pars.y >= 0 and pars.y < oldHeight ) {
+            //floodfill condition
+            if ( color == getPixel(hnd, pars.x, pars.y) ) {
+                //check if it was already visited
+                if ( selMask[pars.y][pars.x] == 0 ) {
+                    //preserve specific order for each direction 
+                    switch( pars.dir ) {
+                        case 0:
+                            call_stack.push({pars.x, pars.y-1, 1}); call_stack.push({pars.x+1, pars.y, 2});
+                            call_stack.push({pars.x, pars.y+1, 3}); call_stack.push({pars.x-1, pars.y, 4});
+                            break;
+                        case 1:
+                            call_stack.push({pars.x-1, pars.y, 4}); call_stack.push({pars.x, pars.y-1, 1});
+                            call_stack.push({pars.x+1, pars.y, 2});
+                            break;
+                        case 2:
+                            call_stack.push({pars.x, pars.y-1, 1}); call_stack.push({pars.x+1, pars.y, 2});
+                            call_stack.push({pars.x, pars.y+1, 3});
+                            break;
+                        case 3:
+                            call_stack.push({pars.x+1, pars.y, 2}); call_stack.push({pars.x, pars.y+1, 3});
+                            call_stack.push({pars.x-1, pars.y, 4});
+                            break;
+                        case 4:
+                            call_stack.push({pars.x, pars.y+1, 3}); call_stack.push({pars.x-1, pars.y, 4});
+                            call_stack.push({pars.x, pars.y-1, 1});
+                            break;
+                    }
+
+                    //update selection mask
+                    selMask[pars.y][pars.x] = 1;
+                    continue;
+                }
+                //since there is no border proc
+                //skip to next iteration
+            }
+        }
+
+        Point pnt = {};
+        //determine a border point to add
+        switch ( pars.dir ) {
+            case 1: pnt.x = pars.x; pnt.y = pars.y+1; break;
+            case 2: pnt.x = pars.x; pnt.y = pars.y; break;
+            case 3: pnt.x = pars.x+1; pnt.y = pars.y; break;
+            case 4: pnt.x = pars.x+1; pnt.y = pars.y+1; break;
+        }
+
+        if ( prev_dir == pars.dir ) {
+            Path.back() = pnt;
+        } else {
+            Path.push_back(pnt);
+        }
+        
+        prev_dir = pars.dir;
+    }
+    
+    return Path;
+}
+
+
 void createSelection(Point pnt)
 {
     initSelectionMask();
-
-    /*
-            creating custom spiral-shaped selection
-            for concept proof only this code snipet
-            assumes that picture size will be 64x64 pixels 
-            or larger
-    */
-    Point conceptProof[] = {
-        {27, 56}, {13, 50}, {6, 36}, {10, 23}, {17,13}, {28, 7},
-        {41, 10}, {52, 20}, {53, 35}, {48, 43}, {38, 46}, {29, 42},
-        {27,32}, {30, 27}, {35, 25}, {36, 30}, {34, 34}, {38, 39},
-        {45, 35}, {46, 23}, {40, 15}, {28, 14}, {19, 18}, {16, 24},
-        {12, 36}, {18, 47}, {29, 50}
-    }; 
-
+    
     selectTool();
 
-    //chances are CFreehandTool::onActivate does it for ya
-    //deleteArrayContents(gFreehandSelectionTool);
+    uintptr_t val = * ( uintptr_t * ) (gFreehandSelectionTool + 0x20);
+    uintptr_t * addr = ( uintptr_t * ) (gFreehandSelectionTool + 0x36);
+    *addr = val;
 
-    //populate the selection with new points
-    for ( Point p : conceptProof ) {
+    deleteArrayContents(gFreehandSelectionTool);
+
+    std::list<Point> Path = floodFillEdge(pnt);
+
+    for ( Point p : Path ) {
         addPoint(gFreehandSelectionTool, p);  
     }
 
